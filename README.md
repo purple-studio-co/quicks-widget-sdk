@@ -27,15 +27,11 @@ bun add @quicks/widget-sdk
 import { useEmbed, saveState } from "@quicks/widget-sdk/react";
 
 function MyWidget() {
-  const { initData, theme, token } = useEmbed({
-    onStateUpdate: (msg) => {
-      // agent or another user updated the card content
-    },
-  });
+  const { initData, theme, token, isFullscreen } = useEmbed();
 
   if (!initData) return <div>Loading...</div>;
 
-  return <div>Card: {initData.cardId}</div>;
+  return <div>Card: {initData.cardId}, status: {initData.status}</div>;
 }
 ```
 
@@ -43,8 +39,12 @@ function MyWidget() {
 1. Reads URL params (`token`, `theme`)
 2. Sends `widget:ready` to the host
 3. Waits for `widget:init` with card data
-4. Handles `widget:theme` changes (toggles `.dark` class on `<html>`)
-5. Cleans up on unmount
+4. Auto-merges `widget:state-updated` into `initData` (status, data, textData)
+5. Handles `widget:theme` changes (toggles `.dark` class on `<html>`)
+6. Tracks fullscreen state
+7. Cleans up on unmount
+
+`onStateUpdate` callback is optional — `initData` updates automatically.
 
 ## Quick Start (Vanilla)
 
@@ -86,6 +86,7 @@ type InitData = {
   readOnly: boolean
   theme: "light" | "dark"
   collabUrl?: string          // Yjs WebSocket URL (for collaborative widgets)
+  user?: { name: string; email?: string }  // current user (for collab cursors)
 }
 
 type EmbedParams = {
@@ -111,6 +112,7 @@ type CollabConnection = {
 | `runHook(hookName, results?)` | `widget:run-hook` | Trigger a hook (onComplete, etc.) |
 | `requestState()` | `widget:request-state` | Request host to re-send `widget:init` |
 | `requestToken()` | `widget:request-token` | Request a fresh JWT token |
+| `setHeaderStatus({ connected?, label? })` | `widget:header-status` | Show status dot in card header (Saved, Offline, etc.) |
 | `postToHost(msg)` | any | Send an arbitrary message to the host |
 
 ### Host -> Widget
@@ -131,6 +133,8 @@ Listen with `onHostMessage(handler)` (returns an unsubscribe function):
 |----------|-------------|
 | `getEmbedParams()` | Parse URL params: `token`, `theme`, `hostOrigin` |
 | `parseCollabUrl(url)` | Split `collabUrl` into `{ serverUrl, roomName, params }` for y-websocket |
+| `fetchApi(path, init?)` | Authenticated fetch to host API (token + apiBase auto-managed) |
+| `getFileUrl(filename)` | Build URL to download a file from the current card directory |
 | `addAllowedOrigin(origin)` | Add a custom allowed origin for postMessage |
 | `setHostOrigin(origin)` | Lock host origin after receiving a valid message |
 
@@ -139,12 +143,18 @@ Listen with `onHostMessage(handler)` (returns an unsubscribe function):
 ```typescript
 import { useEmbed } from "@quicks/widget-sdk/react";
 
-const { initData, theme, token } = useEmbed({
-  onStateUpdate: (msg) => { /* widget:state-updated */ },
+const { initData, theme, token, isFullscreen } = useEmbed();
+// initData auto-updates on widget:state-updated (status, data, textData merged)
+```
+
+Optional callback for custom handling:
+```typescript
+const { initData } = useEmbed({
+  onStateUpdate: (msg) => { /* called AFTER initData is merged */ },
 });
 ```
 
-Re-exports from `@quicks/widget-sdk/react`: `saveState`, `signalError`, `runHook`, `requestState`, `requestToken`, `parseCollabUrl`.
+Re-exports from `@quicks/widget-sdk/react`: `saveState`, `signalError`, `runHook`, `requestState`, `requestToken`, `parseCollabUrl`, `setHeaderStatus`, `fetchApi`, `getFileUrl`.
 
 ## Endpoints
 
@@ -247,11 +257,13 @@ ydoc.on("update", () => {
 
 ### Bidirectional State
 
-An agent (or server code) can write new content to card textData fields. The widget **must** handle `widget:state-updated` and apply new data:
+An agent (or server code) can write new content to card fields. The SDK auto-merges `widget:state-updated` into `initData`, so `status`, `data`, and `textData` update reactively. No manual `onStateUpdate` handler needed for most widgets.
 
+For widgets that need custom logic (e.g. canvas importing SVG):
 ```typescript
 const { initData } = useEmbed({
   onStateUpdate: (msg) => {
+    // Called AFTER initData is already merged
     const { textData } = msg.data as { textData: Record<string, string> };
     if (textData?.svg) {
       editor.selectAll().deleteShapes(editor.getSelectedShapeIds());
@@ -290,6 +302,39 @@ const provider = new WebsocketProvider(collab.serverUrl, collab.roomName, ydoc, 
   params: collab.params,
 });
 ```
+
+### Hard Reset (Close Code 4001)
+
+When an agent writes to a card's collab field, the server closes the WebSocket with code **4001**. The widget must detect this and recreate its Y.Doc to avoid CRDT merge reverting the agent's changes:
+
+```tsx
+const [resetKey, setResetKey] = useState(0);
+const ydoc = useMemo(() => new Y.Doc(), [resetKey]);
+
+// Cancel pending destroy on StrictMode remount
+const destroyTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+useEffect(() => {
+  if (destroyTimerRef.current) {
+    clearTimeout(destroyTimerRef.current);
+    destroyTimerRef.current = undefined;
+  }
+  return () => { destroyTimerRef.current = setTimeout(() => ydoc.destroy(), 0); };
+}, [ydoc]);
+
+// In provider setup:
+const onStatus = ({ status }) => {
+  if (status === "connected" && prov.ws) {
+    prov.ws.addEventListener("close", (event: CloseEvent) => {
+      if (event.code === 4001) {
+        prov.disconnect(); // prevent auto-reconnect with stale state
+        setResetKey((k) => k + 1); // force fresh Y.Doc
+      }
+    });
+  }
+};
+```
+
+**Critical:** The `destroyTimerRef` pattern prevents React StrictMode from destroying the Y.Doc during its double-mount cycle. Without it, `setTimeout(() => ydoc.destroy(), 0)` fires after remount and kills the live Y.Doc.
 
 ### Persist formats
 
@@ -463,5 +508,8 @@ Vite adds content hashes to filenames (`index-YOgzbeKW.js`) — files are immuta
 
 ### Deploy
 
-- Static hosting (Cloudflare Pages, GitHub Pages, Vercel) — the widget doesn't need its own server
+- Static hosting (Cloudflare Pages recommended) — widgets don't need their own server
+- quicks3 widgets are deployed to `widgets.quicks.ai` via CF Pages + GitHub Actions
+- Canvas is deployed separately to `feat-embed.canvas.newaiteam.com` (has its own WS server for standalone mode)
 - If using webhook hooks — a server is needed for handling them
+- **HTTPS required** — widgets loaded from HTTPS can't connect to WS (non-secure) collab endpoints; the SDK auto-upgrades `ws:` to `wss:` for HTTPS hosts
