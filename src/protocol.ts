@@ -11,6 +11,23 @@ export type InitData = {
   readOnly: boolean
   theme: "light" | "dark"
   collabUrl?: string
+  /** Current authenticated user info (for collab cursors, attribution) */
+  user?: { name: string; email?: string }
+}
+
+// --- Internal state (populated from widget:init, used by fetchApi/getFileUrl) ---
+
+let _apiBase = ""
+let _token = ""
+let _cardId = ""
+let _pagePath = ""
+
+/** @internal Called by useEmbed when widget:init is received. */
+export function _setInitContext(init: InitData & { apiBase?: string }, token: string) {
+  _apiBase = (init as any).apiBase ?? ""
+  _token = token
+  _cardId = init.cardId
+  _pagePath = init.pagePath
 }
 
 // --- Origin management ---
@@ -97,6 +114,11 @@ export function requestToken() {
   postToHost({ type: "widget:request-token", data: {} })
 }
 
+/** Send header status indicator to host (rendered in CardHeader afterTitle). */
+export function setHeaderStatus(status: { connected?: boolean; label?: string }) {
+  postToHost({ type: "widget:header-status", data: status })
+}
+
 // --- Inbound (host → widget) ---
 
 export function onHostMessage(handler: (msg: WidgetMessage) => void): () => void {
@@ -133,6 +155,37 @@ export function getEmbedParams(): EmbedParams {
     theme: (params.get("theme") ?? "light") as "light" | "dark",
     hostOrigin,
   }
+}
+
+// --- API helpers ---
+
+/**
+ * Authenticated fetch to host API. Token and base URL are managed automatically.
+ * @param path - API path, e.g. "/cards/upload"
+ * @param init - fetch options (method, body, etc.)
+ */
+export async function fetchApi(path: string, init?: RequestInit): Promise<Response> {
+  if (!_apiBase) throw new Error("fetchApi: widget not initialized (no apiBase)")
+  const headers = new Headers(init?.headers)
+  if (!headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${_token}`)
+  }
+  return fetch(`${_apiBase}${path}`, { ...init, headers })
+}
+
+/**
+ * Build URL to download a file from the current card.
+ * @param filename - filename within the card directory
+ */
+export function getFileUrl(filename: string): string {
+  if (!_apiBase) throw new Error("getFileUrl: widget not initialized (no apiBase)")
+  const params = new URLSearchParams({
+    pagePath: _pagePath,
+    cardId: _cardId,
+    filename,
+    token: _token,
+  })
+  return `${_apiBase}/cards/file?${params}`
 }
 
 // --- Collab URL parsing ---

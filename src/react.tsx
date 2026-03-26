@@ -5,12 +5,13 @@ import {
   getEmbedParams,
   signalReady,
   onHostMessage,
+  _setInitContext,
   type InitData,
   type WidgetMessage,
 } from "./protocol"
 
 export type { InitData, WidgetMessage }
-export { saveState, signalError, runHook, requestState, requestToken, parseCollabUrl } from "./protocol"
+export { saveState, signalError, runHook, requestState, requestToken, parseCollabUrl, setHeaderStatus, fetchApi, getFileUrl } from "./protocol"
 
 type UseEmbedOptions = {
   /** Called on widget:init and widget:state-updated */
@@ -24,6 +25,8 @@ type UseEmbedResult = {
   theme: "light" | "dark"
   /** JWT token from URL params */
   token: string
+  /** Whether the card is currently in fullscreen mode */
+  isFullscreen: boolean
 }
 
 /**
@@ -34,6 +37,7 @@ export function useEmbed(options?: UseEmbedOptions): UseEmbedResult {
   const paramsRef = useRef(getEmbedParams())
   const [initData, setInitData] = useState<InitData | null>(null)
   const [theme, setTheme] = useState<"light" | "dark">(paramsRef.current.theme)
+  const [isFullscreen, setFullscreen] = useState(false)
   const onStateUpdateRef = useRef(options?.onStateUpdate)
   onStateUpdateRef.current = options?.onStateUpdate
 
@@ -48,10 +52,14 @@ export function useEmbed(options?: UseEmbedOptions): UseEmbedResult {
 
     return onHostMessage((msg) => {
       switch (msg.type) {
-        case "widget:init":
-          setInitData(msg.data as unknown as InitData)
+        case "widget:init": {
+          const raw = msg.data as unknown as InitData & { apiBase?: string }
+          _setInitContext(raw, paramsRef.current.token)
+          setInitData(raw)
           break
+        }
         case "widget:state-updated":
+          setInitData((prev) => prev ? { ...prev, ...(msg.data as Record<string, unknown>) } as InitData : prev)
           onStateUpdateRef.current?.(msg)
           break
         case "widget:theme": {
@@ -60,9 +68,12 @@ export function useEmbed(options?: UseEmbedOptions): UseEmbedResult {
           document.documentElement.classList.toggle("dark", t === "dark")
           break
         }
+        case "widget:fullscreen":
+          setFullscreen(!!(msg.data as { active: boolean }).active)
+          break
       }
     })
   }, [])
 
-  return { initData, theme, token: paramsRef.current.token }
+  return { initData, theme, token: paramsRef.current.token, isFullscreen }
 }
