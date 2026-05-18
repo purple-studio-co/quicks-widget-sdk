@@ -7,8 +7,11 @@ export {
   requestState,
   requestToken,
   setHeaderStatus,
+  setMenuItems,
   fetchApi,
   getFileUrl,
+  uploadAsset,
+  resolveAssetSrc,
   onHostMessage,
   getEmbedParams,
   setHostOrigin,
@@ -19,3 +22,16 @@ export {
   type EmbedParams,
   type CollabConnection,
 } from "./protocol"
+
+export {
+  aiComplete,
+  aiPron,
+  aiRealtimeToken,
+  type AiTier,
+  type AiMessage,
+  type AiCompleteParams,
+  type AiCompleteResult,
+  type AiPronParams,
+  type AiPronResult,
+  type AiRealtimeSession,
+} from "./ai"

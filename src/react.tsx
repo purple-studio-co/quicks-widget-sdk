@@ -11,11 +11,15 @@ import {
 } from "./protocol"
 
 export type { InitData, WidgetMessage }
-export { saveState, signalError, runHook, requestState, requestToken, parseCollabUrl, setHeaderStatus, fetchApi, getFileUrl } from "./protocol"
+export { saveState, signalError, runHook, requestState, requestToken, parseCollabUrl, setHeaderStatus, setMenuItems, fetchApi, getFileUrl, uploadAsset, resolveAssetSrc } from "./protocol"
+export { aiComplete, aiPron, aiRealtimeToken } from "./ai"
+export type { AiTier, AiMessage, AiCompleteParams, AiCompleteResult, AiPronParams, AiPronResult, AiRealtimeSession } from "./ai"
 
 type UseEmbedOptions = {
   /** Called on widget:init and widget:state-updated */
   onStateUpdate?: (msg: WidgetMessage) => void
+  /** Called when a menu item registered via setMenuItems is clicked in the host dropdown */
+  onMenuAction?: (id: string) => void
 }
 
 type UseEmbedResult = {
@@ -40,6 +44,8 @@ export function useEmbed(options?: UseEmbedOptions): UseEmbedResult {
   const [isFullscreen, setFullscreen] = useState(false)
   const onStateUpdateRef = useRef(options?.onStateUpdate)
   onStateUpdateRef.current = options?.onStateUpdate
+  const onMenuActionRef = useRef(options?.onMenuAction)
+  onMenuActionRef.current = options?.onMenuAction
 
   // Apply initial theme
   useEffect(() => {
@@ -70,6 +76,9 @@ export function useEmbed(options?: UseEmbedOptions): UseEmbedResult {
         }
         case "widget:fullscreen":
           setFullscreen(!!(msg.data as { active: boolean }).active)
+          break
+        case "widget:menu-action":
+          onMenuActionRef.current?.((msg.data as { id: string }).id)
           break
       }
     })

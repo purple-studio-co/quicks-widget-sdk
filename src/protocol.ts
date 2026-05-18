@@ -34,6 +34,7 @@ export function _setInitContext(init: InitData & { apiBase?: string }, token: st
 
 const ALLOWED_ORIGINS = new Set([
   "https://3.quicks.ai",
+  "https://ru.quicks.ai",
   "http://localhost:5173",
   "http://localhost:3000",
 ])
@@ -119,6 +120,11 @@ export function setHeaderStatus(status: { connected?: boolean; label?: string })
   postToHost({ type: "widget:header-status", data: status })
 }
 
+/** Register menu items in the host card's "..." dropdown menu. */
+export function setMenuItems(items: Array<{ id: string; label: string }>) {
+  postToHost({ type: "widget:set-menu-items", data: { items } })
+}
+
 // --- Inbound (host → widget) ---
 
 export function onHostMessage(handler: (msg: WidgetMessage) => void): () => void {
@@ -149,7 +155,10 @@ export type EmbedParams = {
 export function getEmbedParams(): EmbedParams {
   const params = new URLSearchParams(location.search)
   const hostOrigin = params.get("host_origin")
-  if (hostOrigin) addAllowedOrigin(hostOrigin)
+  if (hostOrigin) {
+    addAllowedOrigin(hostOrigin)
+    setHostOrigin(hostOrigin)
+  }
   return {
     token: params.get("token") ?? "",
     theme: (params.get("theme") ?? "light") as "light" | "dark",
@@ -186,6 +195,34 @@ export function getFileUrl(filename: string): string {
     token: _token,
   })
   return `${_apiBase}/cards/file?${params}`
+}
+
+/**
+ * Upload an arbitrary asset file to the current card's files/ directory.
+ * Does NOT mutate card.toml — intended for inline assets like images in notes.
+ * Returns the relative path (e.g. "files/x.png") to be stored in widget state
+ * and resolved to an absolute URL via `resolveAssetSrc` at render time.
+ */
+export async function uploadAsset(file: File): Promise<string> {
+  const formData = new FormData()
+  formData.append("pagePath", _pagePath)
+  formData.append("cardId", _cardId)
+  formData.append("file", file)
+  const res = await fetchApi("/cards/asset", { method: "PUT", body: formData })
+  if (!res.ok) throw new Error(`uploadAsset failed: ${res.status}`)
+  const { filename } = (await res.json()) as { filename: string }
+  return filename
+}
+
+/**
+ * Resolve a possibly-relative asset src to an absolute URL. Pass-through for
+ * http(s)/data/blob URLs; relative paths are wrapped with `getFileUrl` so
+ * they fetch with a live token.
+ */
+export function resolveAssetSrc(src: string): string {
+  if (!src) return src
+  if (/^(https?:|data:|blob:)/i.test(src)) return src
+  return getFileUrl(src)
 }
 
 // --- Collab URL parsing ---
