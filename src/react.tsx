@@ -14,6 +14,8 @@ export type { InitData, WidgetMessage }
 export { saveState, signalError, runHook, requestState, requestToken, parseCollabUrl, setHeaderStatus, setMenuItems, fetchApi, getFileUrl, uploadAsset, resolveAssetSrc } from "./protocol"
 export { aiComplete, aiPron, aiRealtimeToken } from "./ai"
 export type { AiTier, AiMessage, AiCompleteParams, AiCompleteResult, AiPronParams, AiPronResult, AiRealtimeSession } from "./ai"
+export { kvSet, kvGet, kvGetAll, kvDelete } from "./kv"
+export type { KvItem } from "./kv"
 
 type UseEmbedOptions = {
   /** Called on widget:init and widget:state-updated */

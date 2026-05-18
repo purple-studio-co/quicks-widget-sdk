@@ -6,7 +6,7 @@
  * widget:init), so no extra auth setup is required from the widget.
  */
 
-import { fetchApi } from "./protocol"
+import { fetchApi, _readResponseError as readError } from "./protocol"
 
 export type AiTier = "fast" | "smart" | "json" | "cheap"
 
@@ -57,26 +57,6 @@ export type AiRealtimeSession = {
   ws_url: string
   models: string[]
   expires_at: number
-}
-
-async function readError(res: Response): Promise<string> {
-  // Read the body once as text, then attempt to parse a structured { error } payload.
-  // Reading via res.json() first consumes the stream and would make a subsequent
-  // res.text() always fail.
-  let text = ""
-  try {
-    text = await res.text()
-  } catch {
-    // Stream already consumed or network aborted — fall back to status code.
-    return `HTTP ${res.status}`
-  }
-  try {
-    const body = JSON.parse(text) as { error?: string }
-    if (body?.error) return body.error
-  } catch {
-    // Body is not JSON — return the raw slice below.
-  }
-  return text.slice(0, 200) || `HTTP ${res.status}`
 }
 
 export async function aiComplete(params: AiCompleteParams): Promise<AiCompleteResult> {

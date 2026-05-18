@@ -5,6 +5,8 @@ export type WidgetMessage = { type: string; data?: Record<string, unknown> }
 export type InitData = {
   cardId: string
   pagePath: string
+  /** Widget type id (e.g. "smart-homework") — used for KV/AI usage tagging. */
+  widgetType: string
   status: string
   data: Record<string, string>
   textData: Record<string, string>
@@ -21,6 +23,7 @@ let _apiBase = ""
 let _token = ""
 let _cardId = ""
 let _pagePath = ""
+let _widgetType = ""
 
 /** @internal Called by useEmbed when widget:init is received. */
 export function _setInitContext(init: InitData & { apiBase?: string }, token: string) {
@@ -28,6 +31,34 @@ export function _setInitContext(init: InitData & { apiBase?: string }, token: st
   _token = token
   _cardId = init.cardId
   _pagePath = init.pagePath
+  _widgetType = init.widgetType ?? ""
+}
+
+/** @internal Used by helpers (kv, ai) that need the active context. */
+export function _getInitContext(): { cardId: string; pagePath: string; widgetType: string } {
+  return { cardId: _cardId, pagePath: _pagePath, widgetType: _widgetType }
+}
+
+/**
+ * @internal Read an error message from a non-ok Response body, preferring a
+ * structured `{ error }` payload but falling back to raw text or status.
+ * Shared by ai/kv clients so the formatter logic stays in one place.
+ */
+export async function _readResponseError(res: Response): Promise<string> {
+  let text = ""
+  try {
+    text = await res.text()
+  } catch {
+    // Stream already consumed or network aborted — fall back to status code.
+    return `HTTP ${res.status}`
+  }
+  try {
+    const body = JSON.parse(text) as { error?: string }
+    if (body?.error) return body.error
+  } catch {
+    // Body is not JSON — return the raw slice below.
+  }
+  return text.slice(0, 200) || `HTTP ${res.status}`
 }
 
 // --- Origin management ---
