@@ -27,7 +27,7 @@ let _widgetType = ""
 
 /** @internal Called by useEmbed when widget:init is received. */
 export function _setInitContext(init: InitData & { apiBase?: string }, token: string) {
-  _apiBase = (init as any).apiBase ?? ""
+  _apiBase = init.apiBase ?? ""
   _token = token
   _cardId = init.cardId
   _pagePath = init.pagePath
@@ -75,7 +75,9 @@ try {
   if (typeof document !== "undefined" && document.referrer) {
     ALLOWED_ORIGINS.add(new URL(document.referrer).origin)
   }
-} catch {}
+} catch {
+  // Malformed document.referrer — skip adding it as an allowed origin.
+}
 
 let _hostOrigin: string | null = null
 
@@ -89,7 +91,9 @@ function getHostOrigin(): string | null {
         return origin
       }
     }
-  } catch {}
+  } catch {
+    // document.referrer unavailable or malformed — no host origin resolved.
+  }
   return null
 }
 
