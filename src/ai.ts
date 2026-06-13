@@ -101,3 +101,28 @@ export async function aiRealtimeToken(opts?: {
   if (!res.ok) throw new Error(`ai.realtime.token ${res.status}: ${await readError(res)}`)
   return (await res.json()) as AiRealtimeSession
 }
+
+export type AiTtsParams = {
+  text: string
+  /** Gemini prebuilt voice name (e.g. "Kore", "Puck"); omitted → server default. */
+  voice?: string
+  widgetType?: string
+  cardId?: string
+  signal?: AbortSignal
+}
+
+/**
+ * Text-to-speech via the AI gateway (Gemini TTS). Returns a WAV audio Blob —
+ * wrap it in a blob URL (`URL.createObjectURL`) to feed an Audio element.
+ */
+export async function aiTts(params: AiTtsParams): Promise<Blob> {
+  const { signal, widgetType, cardId, text, voice } = params
+  const res = await fetchApi("/ai/tts", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text, voice, widget_type: widgetType, card_id: cardId }),
+    signal,
+  })
+  if (!res.ok) throw new Error(`ai.tts ${res.status}: ${await readError(res)}`)
+  return await res.blob()
+}

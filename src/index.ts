@@ -27,6 +27,7 @@ export {
   aiComplete,
   aiPron,
   aiRealtimeToken,
+  aiTts,
   type AiTier,
   type AiMessage,
   type AiCompleteParams,
@@ -34,6 +35,7 @@ export {
   type AiPronParams,
   type AiPronResult,
   type AiRealtimeSession,
+  type AiTtsParams,
 } from "./ai"
 
 export {
